@@ -34,6 +34,25 @@ The "stare at diff, type a generic message" loop is slow and the resulting
 messages are usually worse than what a model could produce in 2 seconds
 from the same diff.
 
+## Development
+
+Common tasks are exposed through a [`Justfile`](Justfile). Install
+[`just`](https://github.com/casey/just) (`cargo install just` or
+`brew install just`), then:
+
+| Recipe | What it does |
+|---|---|
+| `just` | List all recipes. |
+| `just build` | `cargo build`. |
+| `just test` | `cargo test`. |
+| `just lint` | `cargo clippy --all-targets --all-features -- -D warnings`. |
+| `just fmt` / `just fmt-check` | Apply or verify `cargo fmt --all`. |
+| `just ci` | What CI runs: `fmt-check` → `lint` → `test`. |
+| `just pre-push` | `fmt` (auto-fix) → `lint` → `test`. Run before pushing. |
+| `just run -- --help` | Run the `cc` binary with extra args. |
+
+Plain `cargo` works too — the Justfile is a convenience, not a requirement.
+
 ## License
 
 MIT
