@@ -39,6 +39,7 @@ pub mod discover;
 pub mod merge;
 pub mod schema;
 pub mod set_override;
+pub mod show;
 pub mod source;
 
 pub use merge::{Layered, Loaded};
@@ -48,4 +49,5 @@ pub use schema::{
     Style, ThemeName, Ui, find_unknown_keys,
 };
 pub use set_override::parse_arg as parse_set_arg;
+pub use show::{render_json, render_toml};
 pub use source::{Source, Sources};
