@@ -107,17 +107,18 @@ pub fn restore_staged(cwd: &Path, paths: &[&Path]) -> Result<()> {
     run(cwd, &arg_refs).map(|_| ())
 }
 
-/// Commit using a message file: `git commit -F <path> [--no-verify]`.
+/// Commit using a message file: `git commit [--no-verify] -F <path>`.
 ///
 /// Writing the message to a tempfile (instead of `-m "…"`) keeps the
 /// user's `commit.template`, `commit.cleanup`, signing, and hooks
 /// working exactly as they would for a normal `git commit`.
 pub fn commit(cwd: &Path, message_file: &Path, no_verify: bool) -> Result<()> {
-    let mut args: Vec<OsString> = vec![OsString::from("commit"), OsString::from("-F")];
-    args.push(message_file.as_os_str().to_owned());
+    let mut args: Vec<OsString> = vec![OsString::from("commit")];
     if no_verify {
         args.push(OsString::from("--no-verify"));
     }
+    args.push(OsString::from("-F"));
+    args.push(message_file.as_os_str().to_owned());
     let arg_refs: Vec<&OsStr> = args.iter().map(OsString::as_os_str).collect();
     run(cwd, &arg_refs).map(|_| ())
 }
