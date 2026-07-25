@@ -13,7 +13,8 @@ use crate::provider::GenerateRequest;
 
 /// Per-run generation parameters, separate from the durable `[style]`
 /// config. `extra_prompt` is appended to the system prompt under a
-/// `USER OVERRIDE` header (the `-p` flag / `[style].extra_prompt`).
+/// `--- USER OVERRIDE ---` separator (`[style].extra_prompt` followed
+/// by the one-run `-p` flag when both are present).
 #[derive(Debug, Clone, Default)]
 pub struct GenOpts {
     pub model: String,
@@ -175,13 +176,13 @@ fn format_rules(style: &Style) -> String {
     }
 }
 
-/// Append the user's extra instructions under a clearly-labelled header
+/// Append the user extra instructions under a clearly-labelled separator
 /// so the model treats them as highest priority.
 fn append_override(s: &mut String, extra: Option<&str>) {
     if let Some(extra) = extra {
         let extra = extra.trim();
         if !extra.is_empty() {
-            s.push_str("\n\nUSER OVERRIDE (highest priority — follow exactly):\n");
+            s.push_str("\n\n--- USER OVERRIDE ---\n");
             s.push_str(extra);
         }
     }
@@ -352,16 +353,22 @@ mod tests {
     }
 
     #[test]
-    fn extra_prompt_appended_under_user_override() {
+    fn extra_prompt_is_the_final_system_prompt_block() {
+        let mut configured = style(MessageFormat::Plain);
+        configured.subject_max_len = 50;
+        configured.include_body = false;
+        configured.examples.clear();
         let sp = system_prompt(
-            &style(MessageFormat::Plain),
+            &configured,
             &[],
-            Some("use British spelling"),
+            Some("include ticket id\n\nuse British spelling"),
         );
-        assert!(sp.contains("USER OVERRIDE"));
-        assert!(sp.contains("use British spelling"));
+        assert_eq!(
+            sp,
+            "You are an expert software engineer writing a git commit message for the staged diff. Write in the imperative mood, present tense.\n\nWrite a single concise sentence summarizing the change.\n\nKeep the subject line at or under 50 characters. Output only the subject line — no body.\n\nOutput ONLY the commit message text — no preamble, no explanation, no code fences, no surrounding quotes.\n\n--- USER OVERRIDE ---\ninclude ticket id\n\nuse British spelling"
+        );
         // Empty / whitespace extra adds nothing.
-        let sp2 = system_prompt(&style(MessageFormat::Plain), &[], Some("   "));
+        let sp2 = system_prompt(&configured, &[], Some("   "));
         assert!(!sp2.contains("USER OVERRIDE"));
     }
 
