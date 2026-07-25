@@ -27,6 +27,13 @@ fn help_lists_every_v01_flag() {
     ] {
         assert!(out.contains(needle), "--help missing flag: {needle}\n{out}");
     }
+
+    let no_verify = out
+        .lines()
+        .find(|line| line.contains("--no-verify"))
+        .expect("--help should describe --no-verify");
+    assert!(no_verify.contains("-n,"));
+    assert!(no_verify.contains("passes --no-verify to git commit"));
 }
 
 #[test]

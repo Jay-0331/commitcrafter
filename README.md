@@ -28,6 +28,20 @@ issues for the full plan. v0.1 ships:
 - `cc setup` and `cc doctor` for first-run + health checks.
 - Local learning store (per-repo + global), opt-out via config.
 
+## Skipping Git hooks
+
+Use `-n` / `--no-verify` with a committing flow when you need Git to skip
+`pre-commit` and `commit-msg` hooks for that one commit:
+
+```sh
+commet -y --no-verify
+# Short form:
+commet -y -n
+```
+
+The flag is passed only to `git commit`. It does not change staging, the diff
+sent to the provider, or the generated prompt.
+
 ## Why
 
 The "stare at diff, type a generic message" loop is slow and the resulting

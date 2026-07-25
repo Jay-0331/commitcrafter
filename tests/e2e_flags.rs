@@ -17,6 +17,9 @@ use std::process::Command;
 use assert_cmd::Command as AssertCommand;
 use tempfile::TempDir;
 
+#[cfg(unix)]
+use std::path::PathBuf;
+
 /// A throwaway git repo with committer identity and signing disabled.
 fn repo() -> TempDir {
     let dir = tempfile::tempdir().unwrap();
@@ -78,6 +81,55 @@ fn staged_names(dir: &Path) -> Vec<String> {
     assert!(output.status.success(), "git diff --cached failed");
     String::from_utf8(output.stdout)
         .unwrap()
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+#[cfg(unix)]
+fn real_git_binary() -> PathBuf {
+    let path = std::env::var_os("PATH").expect("test process should have PATH");
+    std::env::split_paths(&path)
+        .map(|dir| dir.join("git"))
+        .find(|candidate| candidate.is_file())
+        .and_then(|candidate| candidate.canonicalize().ok())
+        .expect("git should be available on PATH")
+}
+
+#[cfg(unix)]
+fn install_git_argv_capture() -> (TempDir, std::ffi::OsString, PathBuf) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let shim_dir = tempfile::tempdir().unwrap();
+    let shim = shim_dir.path().join("git");
+    fs::write(
+        &shim,
+        r#"#!/bin/sh
+if [ "$1" = "commit" ]; then
+    : > "$COMMET_GIT_ARGV_LOG"
+    for arg in "$@"; do
+        printf '%s\n' "$arg" >> "$COMMET_GIT_ARGV_LOG"
+    done
+fi
+exec "$COMMET_REAL_GIT" "$@"
+"#,
+    )
+    .unwrap();
+    fs::set_permissions(&shim, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let original_path = std::env::var_os("PATH").expect("test process should have PATH");
+    let shim_path = std::env::join_paths(
+        std::iter::once(shim_dir.path().to_path_buf()).chain(std::env::split_paths(&original_path)),
+    )
+    .unwrap();
+    let argv_log = shim_dir.path().join("commit-argv");
+    (shim_dir, shim_path, argv_log)
+}
+
+#[cfg(unix)]
+fn captured_argv(log: &Path) -> Vec<String> {
+    fs::read_to_string(log)
+        .expect("git shim should capture the commit invocation")
         .lines()
         .map(str::to_string)
         .collect()
@@ -309,27 +361,59 @@ fn exclude_merges_cli_and_config_filters_without_unstaging() {
 
 #[cfg(unix)]
 #[test]
-fn no_verify_bypasses_a_failing_pre_commit_hook() {
-    use std::os::unix::fs::PermissionsExt;
-
+fn no_verify_only_changes_the_git_commit_argv() {
     let dir = repo();
-    stage(dir.path(), "a.txt", "hello\n");
+    let real_git = real_git_binary();
+    let (_shim_dir, shim_path, argv_log) = install_git_argv_capture();
 
-    // A pre-commit hook that always fails.
-    let hook = dir.path().join(".git/hooks/pre-commit");
-    fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
-    fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
-
-    // Without --no-verify the hook blocks the commit.
-    cc(dir.path(), "feat: blocked").arg("-y").assert().failure();
-    assert_eq!(head_subject(dir.path()), None);
-
-    // With --no-verify the hook is skipped and the commit lands.
-    cc(dir.path(), "feat: forced")
-        .args(["-y", "-n"])
+    stage(dir.path(), "plain.txt", "plain commit\n");
+    cc(dir.path(), "feat: plain commit")
+        .arg("-y")
+        .env("PATH", &shim_path)
+        .env("COMMET_REAL_GIT", &real_git)
+        .env("COMMET_GIT_ARGV_LOG", &argv_log)
         .assert()
         .success();
-    assert_eq!(head_subject(dir.path()).as_deref(), Some("feat: forced"));
+
+    let plain_argv = captured_argv(&argv_log);
+    assert_eq!(&plain_argv[..2], ["commit", "-F"]);
+    assert_eq!(plain_argv.len(), 3, "unexpected argv: {plain_argv:?}");
+
+    stage(dir.path(), "forced.txt", "skip hooks\n");
+    let request_log = dir.path().join("no-verify-request.json");
+    cc(dir.path(), "feat: skip hooks")
+        .args(["-y", "--no-verify"])
+        .env("PATH", &shim_path)
+        .env("COMMET_REAL_GIT", &real_git)
+        .env("COMMET_GIT_ARGV_LOG", &argv_log)
+        .env("COMMET_MOCK_LOG", &request_log)
+        .assert()
+        .success();
+
+    let no_verify_argv = captured_argv(&argv_log);
+    assert_eq!(
+        &no_verify_argv[..3],
+        ["commit", "--no-verify", "-F"],
+        "unexpected argv: {no_verify_argv:?}"
+    );
+    assert_eq!(
+        no_verify_argv.len(),
+        4,
+        "unexpected argv: {no_verify_argv:?}"
+    );
+
+    let request = logged_request(&request_log);
+    let system = request["system_prompt"].as_str().unwrap();
+    let user = request["user_prompt"].as_str().unwrap();
+    assert!(user.contains("forced.txt"));
+    assert!(user.contains("skip hooks"));
+    assert!(!system.contains("no-verify"));
+    assert!(!user.contains("no-verify"));
+    assert!(staged_names(dir.path()).is_empty());
+    assert_eq!(
+        head_subject(dir.path()).as_deref(),
+        Some("feat: skip hooks")
+    );
 }
 
 #[test]
