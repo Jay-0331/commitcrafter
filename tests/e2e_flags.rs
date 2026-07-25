@@ -234,20 +234,29 @@ template = "<type>: <summary>\n\n<body>"
 fn prompt_flag_appends_user_override() {
     let dir = repo();
     stage(dir.path(), "a.txt", "hello\n");
+    let config = r#"
+[style]
+extra_prompt = "include ticket id"
+"#;
+    fs::write(dir.path().join(".commet.toml"), config).unwrap();
     let log = dir.path().join("req.json");
 
     cc(dir.path(), "feat: saludo")
-        .args(["-p", "write in Spanish", "--print"])
+        .args(["--prompt", "write in Spanish", "--print"])
         .env("COMMET_MOCK_LOG", &log)
         .assert()
         .success();
 
-    let system = logged_request(&log)["system_prompt"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    assert!(system.contains("USER OVERRIDE"));
-    assert!(system.contains("write in Spanish"));
+    let request = logged_request(&log);
+    let system = request["system_prompt"].as_str().unwrap();
+    assert!(system.ends_with("--- USER OVERRIDE ---\ninclude ticket id\n\nwrite in Spanish"));
+    assert_eq!(system.matches("--- USER OVERRIDE ---").count(), 1);
+
+    let user = request["user_prompt"].as_str().unwrap();
+    assert!(user.contains("hello"));
+    assert!(!user.contains("include ticket id"));
+    assert!(!user.contains("write in Spanish"));
+    assert!(!user.contains("USER OVERRIDE"));
 }
 
 #[test]

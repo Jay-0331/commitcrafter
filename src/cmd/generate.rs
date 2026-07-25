@@ -371,18 +371,20 @@ fn resolve_count(cli_count: Option<u32>, config_count: u32) -> u8 {
     cli_count.unwrap_or(config_count).clamp(1, 5) as u8
 }
 
-/// Extra system-prompt text: `-p/--prompt` wins over
-/// `[style].extra_prompt`; empty/whitespace yields `None`.
+/// Extra system-prompt text: configured instructions first, then the
+/// one-run `-p/--prompt` instructions. Empty/whitespace values are omitted.
 fn resolve_extra(cli_prompt: Option<&str>, config_extra: &str) -> Option<String> {
-    if let Some(p) = cli_prompt
-        && !p.trim().is_empty()
+    let mut instructions = Vec::with_capacity(2);
+    let config_extra = config_extra.trim();
+    if !config_extra.is_empty() {
+        instructions.push(config_extra);
+    }
+    if let Some(cli_prompt) = cli_prompt.map(str::trim)
+        && !cli_prompt.is_empty()
     {
-        return Some(p.to_string());
+        instructions.push(cli_prompt);
     }
-    if !config_extra.trim().is_empty() {
-        return Some(config_extra.to_string());
-    }
-    None
+    (!instructions.is_empty()).then(|| instructions.join("\n\n"))
 }
 
 /// Model / max_tokens / temperature for the named provider. Ollama's
@@ -593,10 +595,14 @@ mod tests {
     }
 
     #[test]
-    fn extra_prompt_prefers_cli_then_config() {
-        assert_eq!(resolve_extra(Some("cli"), "cfg"), Some("cli".to_string()));
+    fn extra_prompt_combines_config_then_cli() {
+        assert_eq!(
+            resolve_extra(Some(" cli "), " cfg "),
+            Some("cfg\n\ncli".to_string())
+        );
         assert_eq!(resolve_extra(None, "cfg"), Some("cfg".to_string()));
         assert_eq!(resolve_extra(Some("  "), "cfg"), Some("cfg".to_string()));
+        assert_eq!(resolve_extra(Some("cli"), "  "), Some("cli".to_string()));
         assert_eq!(resolve_extra(None, ""), None);
     }
 

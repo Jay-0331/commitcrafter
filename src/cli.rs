@@ -82,7 +82,7 @@ pub struct GenerateOpts {
     #[arg(short = 't', long = "type", value_enum, value_name = "FORMAT")]
     pub format: Option<MessageFormat>,
 
-    /// Extra instructions appended to the system prompt.
+    /// Extra instructions appended after configured style.extra_prompt.
     #[arg(short = 'p', long = "prompt", value_name = "TEXT")]
     pub prompt: Option<String>,
 
