@@ -33,7 +33,7 @@ pub fn run(config: &Config, opts: &GenerateOpts, cwd: &Path) -> Result<()> {
         ));
     }
 
-    let interactive = !opts.print && !opts.yes && std::io::stdout().is_terminal();
+    let interactive = should_run_interactively(opts, std::io::stdout().is_terminal());
     let theme = if interactive {
         let cap = crate::tui::color_cap(config.ui.color, opts.no_color);
         Some(
@@ -143,10 +143,7 @@ pub fn run(config: &Config, opts: &GenerateOpts, cwd: &Path) -> Result<()> {
     }
 
     if opts.print {
-        print!("{}", render_candidates(&candidates));
-        if !render_candidates(&candidates).ends_with('\n') {
-            println!();
-        }
+        print!("{}", render_print_candidates(&candidates));
         return Ok(());
     }
 
@@ -201,8 +198,9 @@ pub fn run(config: &Config, opts: &GenerateOpts, cwd: &Path) -> Result<()> {
         );
     }
 
-    print!("{}", render_candidates(&candidates));
-    if !render_candidates(&candidates).ends_with('\n') {
+    let rendered = render_labeled_candidates(&candidates);
+    print!("{rendered}");
+    if !rendered.ends_with('\n') {
         println!();
     }
     eprintln!("\n(preview only — re-run with -y to commit, or --print for plain output)");
@@ -419,9 +417,31 @@ fn provider_gen_params(config: &Config, name: &str) -> Result<(String, u32, f32)
     Ok(params)
 }
 
-/// Render candidates for stdout: the bare message for a single
-/// candidate, or numbered blocks for several.
-fn render_candidates(candidates: &[String]) -> String {
+/// Whether this run should open the file picker and preview TUI.
+fn should_run_interactively(opts: &GenerateOpts, stdout_is_terminal: bool) -> bool {
+    !opts.print && !opts.yes && stdout_is_terminal
+}
+
+/// Render the `--print` payload. Provider-added trailing line endings are
+/// normalized so adjacent messages always have exactly one blank line between
+/// them, and successful output always ends with one newline.
+fn render_print_candidates(candidates: &[String]) -> String {
+    if candidates.is_empty() {
+        return String::new();
+    }
+
+    let mut rendered = candidates
+        .iter()
+        .map(|candidate| candidate.trim_end_matches(['\r', '\n']))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    rendered.push('\n');
+    rendered
+}
+
+/// Render candidates for the non-interactive preview fallback: the bare
+/// message for a single candidate, or numbered blocks for several.
+fn render_labeled_candidates(candidates: &[String]) -> String {
     if candidates.len() == 1 {
         return candidates[0].clone();
     }
@@ -624,11 +644,30 @@ mod tests {
     }
 
     #[test]
-    fn render_candidates_single_vs_multi() {
-        assert_eq!(render_candidates(&["only".into()]), "only");
-        let multi = render_candidates(&["a".into(), "b".into()]);
+    fn print_candidates_are_raw_with_one_blank_line_between_them() {
+        assert_eq!(render_print_candidates(&["only".into()]), "only\n");
+        assert_eq!(
+            render_print_candidates(&["feat: first\n\nbody\n".into(), "fix: second\r\n".into()]),
+            "feat: first\n\nbody\n\nfix: second\n"
+        );
+    }
+
+    #[test]
+    fn labeled_candidates_are_reserved_for_preview_fallback() {
+        assert_eq!(render_labeled_candidates(&["only".into()]), "only");
+        let multi = render_labeled_candidates(&["a".into(), "b".into()]);
         assert!(multi.contains("--- candidate 1 ---\na"));
         assert!(multi.contains("--- candidate 2 ---\nb"));
+    }
+
+    #[test]
+    fn print_never_runs_interactively_even_on_a_terminal() {
+        let print = GenerateOpts {
+            print: true,
+            ..GenerateOpts::default()
+        };
+        assert!(!should_run_interactively(&print, true));
+        assert!(!should_run_interactively(&print, false));
     }
 
     #[test]

@@ -142,7 +142,16 @@ fn logged_request(log: &Path) -> serde_json::Value {
 }
 
 #[test]
-fn print_outputs_message_without_committing() {
+fn print_outputs_only_the_message_without_side_effects() {
+    let _clipboard_guard = CLIPBOARD_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut clipboard_state = ClipboardRestore::capture().and_then(|restore| {
+        let mut clipboard = arboard::Clipboard::new().ok()?;
+        clipboard.set_text("commet print sentinel").ok()?;
+        Some((clipboard, restore))
+    });
+
     let dir = repo();
     stage(dir.path(), "a.txt", "hello\n");
 
@@ -150,9 +159,14 @@ fn print_outputs_message_without_committing() {
         .arg("--print")
         .assert()
         .success()
-        .stdout(predicates::str::contains("feat: add a.txt"));
+        .stdout("feat: add a.txt\n")
+        .stderr("");
 
     assert_eq!(head_subject(dir.path()), None, "--print must not commit");
+    assert_eq!(staged_names(dir.path()), ["a.txt"]);
+    if let Some((clipboard, _restore)) = clipboard_state.as_mut() {
+        assert_eq!(clipboard.get_text().unwrap(), "commet print sentinel");
+    }
 }
 
 #[test]
@@ -196,11 +210,12 @@ fn generate_flag_reaches_provider_and_prints_three_candidates() {
         .env("COMMET_MOCK_LOG", &log)
         .assert()
         .success()
-        .stdout(predicates::str::contains("candidate 1"))
-        .stdout(predicates::str::contains("candidate 2"))
-        .stdout(predicates::str::contains("candidate 3"));
+        .stdout("one\n\ntwo\n\nthree\n")
+        .stderr("");
 
     assert_eq!(logged_request(&log)["n"], 3);
+    assert_eq!(head_subject(dir.path()), None);
+    assert_eq!(staged_names(dir.path()), ["a.txt"]);
 }
 
 #[test]
@@ -214,10 +229,12 @@ fn configured_generate_count_is_used_without_the_flag() {
         .env("COMMET_MOCK_LOG", &log)
         .assert()
         .success()
-        .stdout(predicates::str::contains("candidate 1"))
-        .stdout(predicates::str::contains("candidate 2"));
+        .stdout("first\n\nsecond\n")
+        .stderr("");
 
     assert_eq!(logged_request(&log)["n"], 2);
+    assert_eq!(head_subject(dir.path()), None);
+    assert_eq!(staged_names(dir.path()), ["a.txt"]);
 }
 
 #[test]
@@ -447,6 +464,8 @@ fn yes_records_the_accepted_commit_to_the_repo_store() {
     );
 }
 
+static CLIPBOARD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 struct ClipboardRestore {
     previous: Option<String>,
 }
@@ -475,6 +494,9 @@ impl Drop for ClipboardRestore {
 
 #[test]
 fn clipboard_with_multiple_candidates_copies_first_headlessly_without_committing() {
+    let _clipboard_guard = CLIPBOARD_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let Some(_restore) = ClipboardRestore::capture() else {
         assert!(
             std::env::var_os("CI").is_none(),

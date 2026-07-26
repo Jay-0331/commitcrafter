@@ -71,6 +71,13 @@ fn yes_and_clipboard_are_rejected_together() {
 }
 
 #[test]
+fn print_conflicts_with_commit_and_clipboard_actions() {
+    for action in ["--yes", "--clipboard"] {
+        cc().args(["--print", action]).assert().failure();
+    }
+}
+
+#[test]
 fn forget_without_target_fails() {
     cc().arg("forget").assert().failure();
 }
