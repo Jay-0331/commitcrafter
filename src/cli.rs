@@ -90,7 +90,7 @@ pub struct GenerateOpts {
     #[arg(short = 'n', long = "no-verify")]
     pub no_verify: bool,
 
-    /// Print the generated message(s) to stdout; no commit, no TUI.
+    /// Print message(s) to stdout, separated by a blank line; no commit or TUI.
     #[arg(long)]
     pub print: bool,
 
