@@ -72,6 +72,36 @@ fn head_subject(dir: &Path) -> Option<String> {
     }
 }
 
+fn commit_count(dir: &Path) -> usize {
+    let output = Command::new("git")
+        .current_dir(dir)
+        .args(["rev-list", "--count", "HEAD"])
+        .output()
+        .unwrap();
+    if !output.status.success() {
+        return 0;
+    }
+    String::from_utf8(output.stdout)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap()
+}
+
+fn head_names(dir: &Path) -> Vec<String> {
+    let output = Command::new("git")
+        .current_dir(dir)
+        .args(["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "git diff-tree failed");
+    String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
 fn staged_names(dir: &Path) -> Vec<String> {
     let output = Command::new("git")
         .current_dir(dir)
@@ -197,6 +227,39 @@ fn yes_with_g2_commits_the_first_candidate() {
 
     // `-y` accepts the first candidate.
     assert_eq!(head_subject(dir.path()).as_deref(), Some("feat: first"));
+    assert_eq!(commit_count(dir.path()), 1);
+}
+
+#[test]
+fn yes_all_stages_only_tracked_changes_and_commits_candidate_zero() {
+    let dir = repo();
+    stage(dir.path(), "tracked.txt", "before\n");
+    git(dir.path(), &["commit", "-q", "-m", "seed"]);
+
+    fs::write(dir.path().join("tracked.txt"), "after\n").unwrap();
+    fs::write(dir.path().join("untracked.txt"), "leave me out\n").unwrap();
+    assert!(staged_names(dir.path()).is_empty());
+    let request_log = dir.path().join("yes-all-request.json");
+
+    cc(dir.path(), "feat: first\nfix: second")
+        .args(["--yes", "--all", "-g", "2"])
+        .env("COMMET_MOCK_LOG", &request_log)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Committed: feat: first"));
+
+    assert_eq!(commit_count(dir.path()), 2, "exactly one commit was added");
+    assert_eq!(head_subject(dir.path()).as_deref(), Some("feat: first"));
+    assert_eq!(head_names(dir.path()), ["tracked.txt"]);
+    assert!(staged_names(dir.path()).is_empty());
+
+    let request = logged_request(&request_log);
+    assert_eq!(request["n"], 2);
+    let user = request["user_prompt"].as_str().unwrap();
+    assert!(user.contains("tracked.txt"));
+    assert!(user.contains("after"));
+    assert!(!user.contains("untracked.txt"));
+    assert!(!user.contains("leave me out"));
 }
 
 #[test]

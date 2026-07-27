@@ -157,6 +157,25 @@ fn add_then_diff_staged_returns_the_change() {
 }
 
 #[test]
+fn add_tracked_stages_modifications_but_not_untracked_files() {
+    let (_tmp, root) = make_repo();
+    make_initial_commit(&root);
+
+    write(&root, "seed.txt", "updated tracked content\n");
+    write(&root, "untracked.txt", "must stay untracked\n");
+    git::add_tracked(&root).unwrap();
+
+    assert_eq!(
+        git::staged_paths(&root).unwrap(),
+        [PathBuf::from("seed.txt")]
+    );
+    let diff = git::diff_staged(&root).unwrap();
+    assert!(diff.contains("updated tracked content"));
+    assert!(!diff.contains("untracked.txt"));
+    assert!(!diff.contains("must stay untracked"));
+}
+
+#[test]
 fn restore_staged_unstages_what_add_staged() {
     let (_tmp, root) = make_repo();
     make_initial_commit(&root);

@@ -28,9 +28,7 @@ const DEFAULT_TEMPERATURE: f32 = 0.2;
 /// Run the default generate flow in `cwd`.
 pub fn run(config: &Config, opts: &GenerateOpts, cwd: &Path) -> Result<()> {
     if opts.all {
-        return Err(Error::Config(
-            "--all is not supported yet — stage changes with `git add` first".into(),
-        ));
+        git::add_tracked(cwd)?;
     }
 
     let interactive = should_run_interactively(opts, std::io::stdout().is_terminal());
@@ -661,13 +659,20 @@ mod tests {
     }
 
     #[test]
-    fn print_never_runs_interactively_even_on_a_terminal() {
+    fn print_and_yes_never_run_interactively_even_on_a_terminal() {
         let print = GenerateOpts {
             print: true,
             ..GenerateOpts::default()
         };
         assert!(!should_run_interactively(&print, true));
         assert!(!should_run_interactively(&print, false));
+
+        let yes = GenerateOpts {
+            yes: true,
+            ..GenerateOpts::default()
+        };
+        assert!(!should_run_interactively(&yes, true));
+        assert!(!should_run_interactively(&yes, false));
     }
 
     #[test]

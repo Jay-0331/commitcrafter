@@ -102,7 +102,7 @@ pub struct GenerateOpts {
     #[arg(long, value_name = "ID")]
     pub model: Option<String>,
 
-    /// Auto-stage all tracked changes before generating.
+    /// Auto-stage changes to tracked files before generating.
     #[arg(long)]
     pub all: bool,
 

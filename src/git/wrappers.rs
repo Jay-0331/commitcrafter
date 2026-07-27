@@ -91,6 +91,13 @@ pub fn add(cwd: &Path, paths: &[&Path]) -> Result<()> {
     run(cwd, &arg_refs).map(|_| ())
 }
 
+/// Stage modifications and deletions of tracked files via `git add --update`.
+///
+/// This deliberately excludes untracked files, matching `git commit --all`.
+pub fn add_tracked(cwd: &Path) -> Result<()> {
+    run(cwd, &[OsStr::new("add"), OsStr::new("--update")]).map(|_| ())
+}
+
 /// Unstage one or more paths via `git reset -- <paths…>`.
 ///
 /// Used by the TUI's auto-unstage-on-abort path so when the user
