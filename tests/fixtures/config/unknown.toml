@@ -1,0 +1,6 @@
+[provider]
+default = "ollama"
+mystery = true
+
+[experimental]
+enabled = true

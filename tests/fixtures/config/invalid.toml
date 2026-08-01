@@ -1,0 +1,3 @@
+[style]
+subject_max_len = 50
+include_body = [
