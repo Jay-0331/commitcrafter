@@ -1,0 +1,9 @@
+[provider]
+default = "openai"
+
+[providers.anthropic]
+model = "global-model"
+max_tokens = 2048
+
+[style]
+subject_max_len = 80
