@@ -494,7 +494,11 @@ fn record_accepted(config: &Config, cwd: &Path, acc: &RecordCtx) {
         edited_text: acc.candidates[acc.accepted_index].clone(),
         files: acc.files.to_vec(),
         diff_bytes: acc.diff.len(),
-        diff: acc.diff.to_string(),
+        diff: if config.learning.store_diffs {
+            acc.diff.to_string()
+        } else {
+            String::new()
+        },
     };
 
     if let Err(e) = store.write(&record) {
