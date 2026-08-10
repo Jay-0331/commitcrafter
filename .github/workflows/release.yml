@@ -1,0 +1,100 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+  BINARY_NAME: commet
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-15
+          - target: x86_64-apple-darwin
+            os: macos-15
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --locked --target ${{ matrix.target }} --bin ${{ env.BINARY_NAME }}
+
+      - name: Package binary
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          package="commitcrafter-${GITHUB_REF_NAME}-${TARGET}"
+          mkdir -p "dist/${package}"
+          cp "target/${TARGET}/release/${BINARY_NAME}" "dist/${package}/"
+          cp README.md LICENSE "dist/${package}/"
+          tar -C dist -czf "dist/${package}.tar.gz" "${package}"
+
+      - name: Upload packaged binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: publish GitHub Release
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate SHA-256 checksums
+        run: |
+          set -euo pipefail
+          mapfile -t archives < <(find artifacts -maxdepth 1 -type f -name '*.tar.gz' -print | sort)
+          if [[ ${#archives[@]} -ne 4 ]]; then
+            printf 'expected 4 release archives, found %s\n' "${#archives[@]}" >&2
+            exit 1
+          fi
+          (cd artifacts && sha256sum ./*.tar.gz > SHA256SUMS)
+
+      - name: Publish release and generated notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            artifacts/*.tar.gz \
+            artifacts/SHA256SUMS \
+            --verify-tag \
+            --generate-notes \
+            --fail-on-no-commits
